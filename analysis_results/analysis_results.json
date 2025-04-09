@@ -1,0 +1,10 @@
+{
+  "norm_diff_stats": {
+    "mean": -0.00680290162563324,
+    "median": -0.0035727880895137787,
+    "std": 0.049994733184576035,
+    "r1_exclusive_count": 0,
+    "base_exclusive_count": 0,
+    "shared_count": 49152
+  }
+}
