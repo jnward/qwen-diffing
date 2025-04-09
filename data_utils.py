@@ -127,12 +127,12 @@ def cached_activation_generator(
     while True:
         my_acts = []
         my_tokens = []
-        print(f"Generating new activations (batch size: {generator_batch_size}, batches: {batches_per_run})...")
+        # print(f"Generating new activations (batch size: {generator_batch_size}, batches: {batches_per_run})...")
         
         # Generate activations for this run
         for _ in range(batches_per_run):
             try:
-                token_batch = next(data_iter)
+                token_batch = next(data_iter).to(base_model.device)
                 base_activations_BD = get_activations(base_model, token_batch, layer_num)
                 finetune_activations_BD = get_activations(finetune_model, token_batch, layer_num)
                 concatenated_activations_BZ = torch.cat([base_activations_BD, finetune_activations_BD], dim=-1)

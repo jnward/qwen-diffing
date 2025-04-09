@@ -49,7 +49,7 @@ class BatchTopKCrosscoder(nn.Module):
             self.W_decoder_FZ.data = self.W_encoder_ZF.T.data.clone()
     
     def get_latent_activations(self, x_BZ: torch.Tensor) -> torch.Tensor:
-        activations_BF = einsum(x_BZ, self.W_encoder_ZF, "b d, d f -> b f") + self.b_encoder_F
+        activations_BF = einsum(x_BZ, self.W_encoder_ZF, "b z, z f -> b f") + self.b_encoder_F
         return F.relu(activations_BF)
     
     def apply_batchtopk(self, activations_BF: torch.Tensor) -> torch.Tensor:
