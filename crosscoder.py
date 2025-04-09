@@ -77,10 +77,13 @@ class BatchTopKCrosscoder(nn.Module):
         
         return sparse_activations_BF
     
+    def decode(self, sparse_activations_BF: torch.Tensor) -> torch.Tensor:
+        return einsum(sparse_activations_BF, self.W_decoder_FZ, "b f, f d -> b d") + self.b_decoder_Z
+    
     def forward(self, x_BZ: torch.Tensor) -> Dict[str, torch.Tensor]:
         activations_BF = self.get_latent_activations(x_BZ)
         sparse_activations_BF = self.apply_batchtopk(activations_BF)
-        recon_BZ = einsum(sparse_activations_BF, self.W_decoder_FZ, "b f, f d -> b d") + self.b_decoder_Z
+        recon_BZ = self.decode(sparse_activations_BF)
         
         return {
             "recon": recon_BZ,
