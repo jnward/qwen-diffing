@@ -15,13 +15,21 @@ base_model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-Math-1.5B", devi
 r1_tokenizer = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
 r1_model = AutoModelForCausalLM.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B", device_map=device, torch_dtype=torch.bfloat16)
 # %%
+# dataset = load_dataset(
+#     "a-m-team/AM-DeepSeek-R1-Distilled-1.4M",
+#     "am_0.5M",
+#     split="train",
+#     streaming=False,
+# )
 dataset = load_dataset(
-    "a-m-team/AM-DeepSeek-R1-Distilled-1.4M",
-    "am_0.9M",
+    "ServiceNow-AI/R1-Distill-SFT",
+    "v1",
     split="train",
-    streaming=True,
+    streaming=False,
 )
 dataset = dataset.shuffle(seed=42)
+
+# %%
 
 # %%
 from crosscoder import BatchTopKCrosscoder
@@ -46,7 +54,7 @@ optimizer = optim.Adam(crosscoder.parameters(), lr=1e-4)
 scheduler = get_constant_schedule_with_warmup(optimizer, num_warmup_steps=1000)
 run = wandb.init(
     project="qwen-crosscoder",
-    name=f"crosscoder-layer{layer_num}_{n_features}_{k}_shuffle_aux",
+    name=f"crosscoder-layer{layer_num}_{n_features}_{k}_fullshuffle_SNAI_aux",
 )
 latent_tracker = LatentTracker(
     n_features,
@@ -66,7 +74,7 @@ actual_batch_size = 512
 accumulation_steps = virtual_batch_size // actual_batch_size
 total_forward_passes = num_optimizer_steps * accumulation_steps
 alpha = 1/32
-crosscoder_path = f"crosscoder-layer{layer_num}.pt"
+crosscoder_path = f"crosscoder-layer{layer_num}_{n_features}_{k}_fullshuffle_aux.pt"
 
 my_data_generator = cached_activation_generator(
     base_model=base_model,
@@ -117,7 +125,18 @@ pbar = tqdm(range(num_optimizer_steps))
 for optimizer_step in pbar:
     optimizer.zero_grad()
     for acc_step in range(accumulation_steps):
-        target = next(my_data_generator).to(device).to(torch.float32)
+        try:
+            target = next(my_data_generator).to(device).to(torch.float32)
+        except TypeError as e:
+            print(f"Invalid data encountered: {e}")
+            print("Attempting to load a different batch...")
+            while True:
+                try:
+                    target = next(my_data_generator).to(device).to(torch.float32)
+                    break
+                except TypeError as e:
+                    print(f"Invalid data encountered: {e}")
+                    print("Attempting to load a different batch...")
 
         out = crosscoder.forward(target)
         reconstruction = out["recon"]

@@ -21,8 +21,12 @@ def token_iter(
 ):
     batch = []
     for example in dataset:
-        prompt = example["messages"][0]["content"]
-        response = example["messages"][1]["content"]  # type: ignore
+        # prompt = example["messages"][0]["content"]
+        # response = example["messages"][1]["content"]  # type: ignore
+
+        prompt = example["reannotated_messages"][0]["content"]
+        response = example["reannotated_messages"][1]["content"]
+
         prompt_tokens = tokenizer(prompt, add_special_tokens=False)["input_ids"]
         response_tokens = tokenizer(response)["input_ids"][1:]  # remove BOS from response
         # add user and assistant tokens
