@@ -693,6 +693,11 @@ def forward_from_layer(model, hidden_states, layer_idx, attention_mask=None):
         # Use hidden_states for device, but the actual values don't matter
         cos_sin = rotary_emb(hidden_states, position_ids)
     
+    # Convert attention_mask to the right dtype if it exists
+    if attention_mask is not None:
+        # Convert attention_mask to bool
+        attention_mask = attention_mask.to(dtype=torch.bool)
+    
     # Skip the layers before layer_idx as we're injecting at layer_idx
     for i in range(layer_idx, len(layers)):
         # Run through each transformer layer
