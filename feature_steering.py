@@ -82,9 +82,7 @@ class FeatureSteerer:
             scale: Scaling factor for the steering vector
         """
         # Get the steering vector and convert to model's dtype
-        steering_vector = get_feature_steering_vector(
-            self.crosscoder, feature_id, model_type, scale
-        ).to(self.device).to(self.dtype)  # Match model's dtype
+        steering_vector = get_feature_steering_vector(self.crosscoder, feature_id, model_type, scale).to(self.device).to(self.dtype)  # Match model's dtype
         
         # Define the hook function
         def steering_hook(module, input, output):
@@ -101,8 +99,7 @@ class FeatureSteerer:
         
         return hook_handle
     
-    def generate_with_steering(self, prompt, feature_id, layer_num=14, model_type="r1", 
-                              scale=1.0, max_new_tokens=100, temperature=0.7):
+    def generate_with_steering(self, prompt, feature_id, layer_num=14, model_type="r1", scale=1.0, max_new_tokens=100, temperature=0.7):
         """
         Generate text with feature steering applied.
         
@@ -126,7 +123,7 @@ class FeatureSteerer:
             outputs_baseline = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
-                do_sample=True,
+                do_sample=True if temperature > 0.0 else False,
                 temperature=temperature,
                 top_p=0.9,
             )
@@ -139,7 +136,7 @@ class FeatureSteerer:
             outputs_steered = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
-                do_sample=True,
+                do_sample=True if temperature > 0.0 else False,
                 temperature=temperature,
                 top_p=0.9,
             )
@@ -184,7 +181,7 @@ class FeatureSteerer:
             outputs_baseline = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
-                do_sample=True,
+                do_sample=True if temperature > 0.0 else False,
                 temperature=temperature,
                 top_p=0.9,
             )
@@ -199,7 +196,7 @@ class FeatureSteerer:
                 outputs_steered = self.model.generate(
                     **inputs,
                     max_new_tokens=max_new_tokens,
-                    do_sample=True,
+                    do_sample=True if temperature > 0.0 else False,
                     temperature=temperature,
                     top_p=0.9,
                 )
@@ -212,8 +209,7 @@ class FeatureSteerer:
         
         return results
 
-def run_batch_experiments(feature_ids, prompts, model_types=["r1"], scales=[-5.0, -1.0, 0.0, 1.0, 5.0], 
-                         layer_num=14, max_tokens=100, temperature=0.7):
+def run_batch_experiments(feature_ids, prompts, model_types=["r1"], scales=[-5.0, -1.0, 1.0, 5.0], layer_num=14, max_tokens=100, temperature=0.7):
     """
     Run feature steering experiments on multiple prompts and features.
     
@@ -273,9 +269,12 @@ def run_batch_experiments(feature_ids, prompts, model_types=["r1"], scales=[-5.0
             for i, prompt in enumerate(prompts):
                 print(f"  Processing prompt {i+1}/{len(prompts)}")
                 
+                # Add "Let me think:" to the beginning of the prompt
+                thinking_prompt = f"{prompt}"
+                
                 # Generate results with different scales
                 results = steerer.analyze_feature_impact(
-                    prompt, 
+                    thinking_prompt, 
                     feature_id,
                     layer_num=layer_num,
                     scales=scales,
@@ -288,6 +287,8 @@ def run_batch_experiments(feature_ids, prompts, model_types=["r1"], scales=[-5.0
                 results["feature_id"] = feature_id
                 results["model_type"] = model_type
                 results["layer_num"] = layer_num
+                results["original_prompt"] = prompt
+                results["thinking_prompt"] = thinking_prompt
                 
                 # Save results
                 prompt_slug = prompt[:20].replace(" ", "_").replace("?", "").replace(".", "")
@@ -313,8 +314,8 @@ def main():
     parser.add_argument("--model_type", type=str, default="r1", choices=["base", "r1"], help="Which model's decoder to use")
     parser.add_argument("--scale", type=float, default=1.0, help="Scaling factor for the steering vector")
     parser.add_argument("--layer_num", type=int, default=14, help="Layer number to apply steering to")
-    parser.add_argument("--max_tokens", type=int, default=100, help="Maximum number of tokens to generate")
-    parser.add_argument("--temperature", type=float, default=0.7, help="Temperature for sampling")
+    parser.add_argument("--max_tokens", type=int, default=300, help="Maximum number of tokens to generate")
+    parser.add_argument("--temperature", type=float, default=0.6, help="Temperature for sampling") # TODO: Should the temperature be 0.0?
     parser.add_argument("--analyze", action="store_true", help="Analyze feature impact with multiple scales")
     parser.add_argument("--output_file", type=str, help="Output file to save results")
     parser.add_argument("--batch_mode", action="store_true", help="Run batch experiments with predefined prompts")
@@ -324,33 +325,22 @@ def main():
         # Define interesting feature IDs to test
         # These are examples - you might want to use specific features you're interested in
         feature_ids = [
-            17992,   
-            2385,
-            11874,
-            245
+            # 17992,   
+            # 2385,
+            # 11874,
+            # 245,
+            # 25777,
+            # 5542,
+            # 33581,
+            # 15412, 
+            153,
         ]
         
         # Define a set of diverse prompts
         prompts = [
-            # General knowledge questions
-            "What is the meaning of life?",
-            "Explain how the internet works in simple terms.",
-            "What are the main causes of climate change?",
-            
-            # Math problems (simple)
-            "What is 2+2?",
-            "Calculate the area of a circle with radius 5.",
-            
-            # Math problems (complex)
-            "Solve the equation: 3x^2 + 6x - 9 = 0",
-            "What is the derivative of f(x) = x^3 + 2x^2 - 5x + 3?",
-            
-            # Reasoning tasks
-            "If all A are B, and all B are C, what can we conclude about A and C?",
-            "A train travels at 60 mph for 2.5 hours. How far does it travel?",
-            
-            # Creative prompt
-            "Write a short poem about artificial intelligence."
+            "Solve this math problem step by step. Put your final answer in \\boxed{}. Problem: Emma had just been given some coins by her parents.  On the way to school she lost exactly half of them, and then by retracing her steps she found exactly four-fifths of the coins she had lost.  What fraction of the coins that she received from her parents were still missing after Emma retraced her steps? Express your answer as a common fraction. Solution: \n<think>\n",
+            "Solve this math problem step by step. Put your final answer in \\boxed{}. Problem: Evaluate the infinite geometric series: $$\\frac{1}{3}+\\frac{1}{6}+\\frac{1}{12}+\\frac{1}{24}+\\dots$$ Solution: \n<think>\n",
+            "Solve this math problem step by step. Put your final answer in \\boxed{}. Problem: Find the largest prime factor of $9879$. Solution: \n<think>\n"
         ]
         
         # Run batch experiments
@@ -358,10 +348,10 @@ def main():
             feature_ids=feature_ids,
             prompts=prompts,
             model_types=["r1", "base"],  # Test both model types
-            scales=[-5.0, -2.0, -1.0, 0.0, 1.0, 2.0, 5.0],  # Various scales
+            scales=[-2.0, -1.5, -1.0, -0.5, 0.5, 1.0, 1.5, 2.0],  # Various scales
             layer_num=14,
-            max_tokens=150,
-            temperature=0.7
+            max_tokens=300,
+            temperature=0.6
         )
     else:
         # Original functionality
@@ -401,7 +391,7 @@ def main():
                 args.prompt, 
                 args.feature_id,
                 layer_num=args.layer_num,
-                scales=[-5.0, -2.0, -1.0, 1.0, 2.0, 5.0],
+                scales=[-2.0, -1.5, -1.0, -0.5, 0.5, 1.0, 1.5, 2.0],
                 model_type=args.model_type,
                 max_new_tokens=args.max_tokens,
                 temperature=args.temperature

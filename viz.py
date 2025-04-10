@@ -99,7 +99,7 @@ def get_crosscoder_activations(prompt: str, response: str = "", layer_num: int =
     
     return features, tokens
 
-def find_top_activating_tokens(feature_id: int, num_examples: int = 100, limit: int = 100):
+def find_top_activating_tokens(feature_id: int, num_examples: int = 10, limit: int = 100):
     """Find tokens that most strongly activate a specific feature"""
     # Convert feature_id to integer
     feature_id = int(feature_id)
@@ -154,7 +154,7 @@ def find_top_activating_tokens(feature_id: int, num_examples: int = 100, limit: 
     top_activations = sorted(top_activations, key=lambda x: x['activation'], reverse=True)
     
     # Save to intermediate file for easier debugging
-    with open(f"feature_{feature_id}_activations.json", "w") as f:
+    with open(f"viz_files/feature_{feature_id}_activations.json", "w") as f:
         json.dump(top_activations[:num_examples], f, indent=2)
     
     return top_activations[:num_examples]
@@ -164,6 +164,8 @@ def generate_html_file():
     # Load the crosscoder model
     model_path = "crosscoder-layer14_49152_100_fullshuffle_aux.pt"
     global crosscoder, base_model, r1_model, r1_tokenizer
+    
+    os.makedirs("viz_files", exist_ok=True)
     
     # Load models
     print("Loading models...")
@@ -524,7 +526,7 @@ def generate_html_file():
                         
                         # Create a mapping file for this example
                         example_id = len(processed_activations)
-                        mapping_file = f"feature_{feature_id}_example_{example_id}_mapping.json"
+                        mapping_file = f"viz_files/feature_{feature_id}_example_{example_id}_mapping.json"
                         
                         with open(mapping_file, "w") as f:
                             json.dump({

@@ -1,3 +1,4 @@
 *.pt
 __pycache__/
 science-of-finetuning/
+*.html
