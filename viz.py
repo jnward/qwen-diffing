@@ -99,7 +99,7 @@ def get_crosscoder_activations(prompt: str, response: str = "", layer_num: int =
     
     return features, tokens
 
-def find_top_activating_tokens(feature_id: int, num_examples: int = 100, limit: int = 10):
+def find_top_activating_tokens(feature_id: int, num_examples: int = 100, limit: int = 100):
     """Find tokens that most strongly activate a specific feature"""
     # Convert feature_id to integer
     feature_id = int(feature_id)
@@ -128,39 +128,34 @@ def find_top_activating_tokens(feature_id: int, num_examples: int = 100, limit: 
         
         for idx in top_indices:
             if feature_acts[idx] > 0:  # Only include positive activations
-                token = r1_tokenizer.decode(tokens[0, idx])
+                token_id = tokens[0, idx].item()
+                token_text = r1_tokenizer.decode([token_id])
                 
-                # Get context around the token (5 tokens before and after)
-                start_idx = max(0, idx - 5)
-                end_idx = min(tokens.shape[1], idx + 6)
-                context_tokens = tokens[0, start_idx:end_idx].cpu().tolist()
-                context = r1_tokenizer.decode(context_tokens)
-                
-                # Get the full text with highlighted token
-                full_text = prompt + "\n\n" + response
-                token_positions = []
-                
-                # Create token-level activations for highlighting
-                all_tokens = r1_tokenizer.encode(full_text)
-                token_activations = []
-                
-                # Process the full text to get activations for all tokens
-                full_features, full_tokens = get_crosscoder_activations(prompt, response)
-                full_acts = full_features[0, :, feature_id].cpu().numpy()
+                # Create a list of all tokens and their activations
+                token_data = []
+                for j in range(tokens.shape[1]):
+                    token_data.append({
+                        'token': r1_tokenizer.decode([tokens[0, j].item()]),
+                        'token_id': tokens[0, j].item(),
+                        'activation': float(features[0, j, feature_id].cpu().numpy())
+                    })
                 
                 top_activations.append({
-                    'token': token,
+                    'token': token_text,
+                    'token_id': token_id,
                     'activation': float(feature_acts[idx]),
-                    'context': context,
-                    'full_text': full_text,
                     'prompt': prompt,
                     'response': response,
                     'token_index': int(idx),
-                    'all_activations': full_acts.tolist()
+                    'token_data': token_data
                 })
     
     # Sort by activation strength
     top_activations = sorted(top_activations, key=lambda x: x['activation'], reverse=True)
+    
+    # Save to intermediate file for easier debugging
+    with open(f"feature_{feature_id}_activations.json", "w") as f:
+        json.dump(top_activations[:num_examples], f, indent=2)
     
     return top_activations[:num_examples]
 
@@ -197,9 +192,10 @@ def generate_html_file():
     df_sorted = df.sort_values(by='dec_norm_diff')
     
     # Generate distribution plot
-    plt.figure(figsize=(10, 6))
-    plt.hist(norm_diffs, bins=50)
+    plt.figure(figsize=(6, 4))
+    plt.hist(norm_diffs, bins=300)
     plt.axvline(x=0, color='r', linestyle='--')
+    plt.grid(True)
     plt.title('Distribution of Decoder Norm Differences')
     plt.xlabel('Norm Difference (negative = base, positive = R1)')
     plt.ylabel('Count')
@@ -305,6 +301,16 @@ def generate_html_file():
             // Store norm differences for all features
             const normDiffs = {json.dumps(norm_diffs.tolist())};
             
+            // Function to escape HTML
+            function escapeHtml(text) {{
+                return text
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#039;");
+            }}
+            
             // Function to search for a feature
             async function searchFeature() {{
                 // Show loading indicator
@@ -339,76 +345,7 @@ def generate_html_file():
                     const data = await response.json();
                     
                     // Display results
-                    const resultsContainer = document.getElementById('activationResults');
-                    resultsContainer.innerHTML = '';
-                    
-                    data.forEach((example, index) => {{
-                        const div = document.createElement('div');
-                        div.className = 'example';
-                        
-                        // Create header with activation info
-                        const header = document.createElement('h3');
-                        header.textContent = `Example #${{index + 1}} - Token: "${{example.token}}" (Activation: ${{example.activation.toFixed(4)}})`;
-                        div.appendChild(header);
-                        
-                        // Create prompt section
-                        const promptHeader = document.createElement('h4');
-                        promptHeader.textContent = 'Prompt:';
-                        div.appendChild(promptHeader);
-                        
-                        const promptPre = document.createElement('pre');
-                        promptPre.textContent = example.prompt;
-                        div.appendChild(promptPre);
-                        
-                        // Create response section with highlighted tokens
-                        const responseHeader = document.createElement('h4');
-                        responseHeader.textContent = 'Response:';
-                        div.appendChild(responseHeader);
-                        
-                        const responsePre = document.createElement('pre');
-                        
-                        // Tokenize the response and highlight tokens with high activation
-                        const tokens = example.response.split('');
-                        const activations = example.all_activations;
-                        
-                        // Find the activation threshold (use 0.5 of max activation as threshold)
-                        const maxActivation = Math.max(...activations.filter(a => a > 0));
-                        const threshold = maxActivation * 0.5;
-                        
-                        // Create highlighted HTML
-                        let highlightedText = '';
-                        let currentHighlight = false;
-                        
-                        for (let i = 0; i < tokens.length; i++) {{
-                            const activation = i < activations.length ? activations[i] : 0;
-                            const shouldHighlight = activation > threshold;
-                            
-                            if (shouldHighlight && !currentHighlight) {{
-                                highlightedText += '<span class="token-highlight">';
-                                currentHighlight = true;
-                            }} else if (!shouldHighlight && currentHighlight) {{
-                                highlightedText += '</span>';
-                                currentHighlight = false;
-                            }}
-                            
-                            // Escape HTML characters
-                            const char = tokens[i]
-                                .replace(/&/g, '&amp;')
-                                .replace(/</g, '&lt;')
-                                .replace(/>/g, '&gt;');
-                            
-                            highlightedText += char;
-                        }}
-                        
-                        if (currentHighlight) {{
-                            highlightedText += '</span>';
-                        }}
-                        
-                        responsePre.innerHTML = highlightedText;
-                        div.appendChild(responsePre);
-                        
-                        resultsContainer.appendChild(div);
-                    }});
+                    await displayResults(data);
                     
                     // Show results
                     document.getElementById('results').style.display = 'block';
@@ -417,6 +354,67 @@ def generate_html_file():
                     alert('Error fetching activations. See console for details.');
                 }} finally {{
                     document.getElementById('loading').style.display = 'none';
+                }}
+            }}
+            
+            // Function to display activation results
+            async function displayResults(data) {{
+                const resultsContainer = document.getElementById('activationResults');
+                resultsContainer.innerHTML = '';
+                
+                for (let i = 0; i < data.length; i++) {{
+                    const example = data[i];
+                    
+                    // Fetch the token mapping for this example
+                    const mappingResponse = await fetch('/mapping/' + example.mapping_file);
+                    const mappingData = await mappingResponse.json();
+                    
+                    const div = document.createElement('div');
+                    div.className = 'example';
+                    
+                    // Create header with activation info
+                    const header = document.createElement('h3');
+                    header.textContent = `Example #${{i + 1}} - Token: "${{example.token}}" (Activation: ${{example.activation.toFixed(4)}})`;
+                    div.appendChild(header);
+                    
+                    // Create prompt section
+                    const promptHeader = document.createElement('h4');
+                    promptHeader.textContent = 'Prompt:';
+                    div.appendChild(promptHeader);
+                    
+                    const promptPre = document.createElement('pre');
+                    promptPre.textContent = example.prompt;
+                    div.appendChild(promptPre);
+                    
+                    // Create response section with highlighted tokens
+                    const responseHeader = document.createElement('h4');
+                    responseHeader.textContent = 'Response:';
+                    div.appendChild(responseHeader);
+                    
+                    const responsePre = document.createElement('pre');
+                    
+                    // Highlight tokens based on their activations
+                    const tokenData = mappingData.token_data;
+                    const maxActivation = Math.max(...tokenData.map(t => t.activation).filter(a => a > 0));
+                    
+                    // Create HTML with highlighted tokens
+                    let highlightedResponse = '';
+                    for (const token of tokenData) {{
+                        const activation = token.activation;
+                        const normalizedActivation = activation / maxActivation;
+                        
+                        if (normalizedActivation > 0.2) {{ // Only highlight tokens with significant activation
+                            const opacity = Math.max(0.2, Math.min(1.0, normalizedActivation));
+                            highlightedResponse += `<span class="token-highlight" style="background-color: rgba(255, 0, 0, ${{opacity}});">${{escapeHtml(token.token)}}</span>`;
+                        }} else {{
+                            highlightedResponse += escapeHtml(token.token);
+                        }}
+                    }}
+                    
+                    responsePre.innerHTML = highlightedResponse;
+                    div.appendChild(responsePre);
+                    
+                    resultsContainer.appendChild(div);
                 }}
             }}
             
@@ -515,11 +513,53 @@ def generate_html_file():
                         activations = find_top_activating_tokens(feature_id)
                         activation_cache[feature_id] = activations
                     
+                    # Process activations to include token-to-text mapping
+                    processed_activations = []
+                    for example in activations:
+                        # Create a list of tokens with their text and activations
+                        tokens_with_text = []
+                        
+                        # Get the full text
+                        full_text = example['prompt'] + "\n\n" + example['response']
+                        
+                        # Create a mapping file for this example
+                        example_id = len(processed_activations)
+                        mapping_file = f"feature_{feature_id}_example_{example_id}_mapping.json"
+                        
+                        with open(mapping_file, "w") as f:
+                            json.dump({
+                                'prompt': example['prompt'],
+                                'response': example['response'],
+                                'token_data': example['token_data']
+                            }, f, indent=2)
+                        
+                        processed_activations.append({
+                            'token': example['token'],
+                            'activation': example['activation'],
+                            'prompt': example['prompt'],
+                            'response': example['response'],
+                            'mapping_file': mapping_file
+                        })
+                    
                     # Send response
                     self.send_response(200)
                     self.send_header('Content-type', 'application/json')
                     self.end_headers()
-                    self.wfile.write(json.dumps(activations).encode())
+                    self.wfile.write(json.dumps(processed_activations).encode())
+                
+                elif parsed_url.path.startswith('/mapping/'):
+                    mapping_file = parsed_url.path.replace('/mapping/', '')
+                    
+                    try:
+                        with open(mapping_file, "r") as f:
+                            mapping_data = json.load(f)
+                        
+                        self.send_response(200)
+                        self.send_header('Content-type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps(mapping_data).encode())
+                    except:
+                        self.send_error(404, "Mapping file not found")
                 
                 elif parsed_url.path == '/precompute_activations':
                     query = parse_qs(parsed_url.query)
