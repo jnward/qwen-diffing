@@ -279,8 +279,8 @@ def track_feature_activations(
                 
                 # Get token and context
                 token = tokenizer.decode(batch[i, j].item())
-                context_start = max(0, j-10)
-                context_end = min(batch.shape[1], j+11)
+                context_start = max(0, j-7)
+                context_end = min(batch.shape[1], j+5)
                 context = tokenizer.decode(batch[i, context_start:context_end].tolist())
                 
                 # Get activated features for this token
